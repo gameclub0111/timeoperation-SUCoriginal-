@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<title>タイムオペレーション（SUCデイズ特別仕様）</title>
+<style>
+body{
+  margin:0;
+  background:#000;
+  overflow:hidden;
+  font-family:Arial, sans-serif;
+  color:white;
+}
+
+#main{
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+}
+
+canvas{
+  display:block;
+  cursor:pointer;
+}
+
+#remaining{
+  font-size:3vw;
+  margin-top:2vh;
+}
+
+/* フェード通知 */
+#toast{
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  font-size:4vw;
+  background:rgba(0,0,0,0.7);
+  padding:20px 40px;
+  border-radius:20px;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity 0.5s;
+}
+</style>
+</head>
+<body>
+
+<div id="main">
+  <canvas id="clockCanvas"></canvas>
+  <div id="remaining"></div>
+</div>
+
+<div id="toast"></div>
+
+<audio id="alertSound" src="TOA_XEBEC_chimeA.wav" preload="auto"></audio>
+
+<script>
+// ===== 固定設定 =====
+const NG_START = 50;
+const NG_END = 0;
+
+// 鳴動許可時間
+const ALLOW_START = {h:11, m:50};
+const ALLOW_END   = {h:17, m:0};
+
+let lastState = "";
+let muteTemp = false;
+
+const canvas = document.getElementById("clockCanvas");
+const ctx = canvas.getContext("2d");
+let radius;
+
+// ===== リサイズ =====
+function resizeClock(){
+  const size = Math.min(window.innerWidth, window.innerHeight) * 0.8;
+  canvas.width = size;
+  canvas.height = size;
+  radius = size / 2;
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.translate(radius, radius);
+}
+window.addEventListener("resize", resizeClock);
+resizeClock();
+
+// ===== 自動フルスク =====
+function enterFull(){
+  if(!document.fullscreenElement){
+    document.documentElement.requestFullscreen().catch(()=>{});
+  }
+}
+window.addEventListener("load", ()=>{
+  setTimeout(()=>enterFull(),300);
+});
+
+// ===== フェード通知 =====
+function showToast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg;
+  t.style.opacity=1;
+  setTimeout(()=>{t.style.opacity=0;},3000);
+}
+
+// ===== クリックでミュート =====
+canvas.addEventListener("click", ()=>{
+  muteTemp = !muteTemp;
+  showToast(muteTemp ? "臨時消音中" : "消音解除");
+});
+
+// ===== 時間範囲判定 =====
+function isWithinAllowed(now){
+  const cur = now.getHours()*60 + now.getMinutes();
+  const start = ALLOW_START.h*60 + ALLOW_START.m;
+  const end   = ALLOW_END.h*60 + ALLOW_END.m;
+  return cur >= start && cur <= end;
+}
+
+// ===== 時計描画 =====
+function drawClock(){
+  const now = new Date();
+  const h = now.getHours();
+  const m = now.getMinutes();
+  const s = now.getSeconds();
+
+  let state, targetMinute;
+
+  if(m >= NG_START || m < NG_END){
+    state="NG";
+    targetMinute=NG_END;
+    if(m >= NG_START) targetMinute+=60;
+  }else{
+    state="OK";
+    targetMinute=NG_START;
+  }
+
+  // 音制御
+  if(state !== lastState){
+    if(!muteTemp && isWithinAllowed(now)){
+      const audio=document.getElementById("alertSound");
+      audio.currentTime=0;
+      audio.play().catch(()=>{});
+    }
+    lastState=state;
+  }
+
+  ctx.clearRect(-radius,-radius,canvas.width,canvas.height);
+  const color = (state==="NG") ? "red" : "lime";
+
+  // 外枠
+  ctx.beginPath();
+  ctx.arc(0,0,radius-10,0,2*Math.PI);
+  ctx.lineWidth=15;
+  ctx.strokeStyle=color;
+  ctx.stroke();
+
+  // 数字
+  ctx.font = radius*0.15 + "px Arial";
+  ctx.textBaseline="middle";
+  ctx.textAlign="center";
+  ctx.fillStyle=color;
+
+  for(let num=1; num<=12; num++){
+    let ang=num*Math.PI/6;
+    ctx.rotate(ang);
+    ctx.translate(0,-radius*0.8);
+    ctx.rotate(-ang);
+    ctx.fillText(num.toString(),0,0);
+    ctx.rotate(ang);
+    ctx.translate(0,radius*0.8);
+    ctx.rotate(-ang);
+  }
+
+  // 針
+  drawHand((h%12)*Math.PI/6 + m*Math.PI/(6*60), radius*0.5, 6,"white");
+  drawHand(m*Math.PI/30, radius*0.7, 4,"white");
+  drawHand(s*Math.PI/30, radius*0.8, 2,"red");
+
+  // 残り時間
+  let currentSec=m*60+s;
+  let targetSec=(targetMinute%60)*60;
+  if(targetMinute>=60) targetSec=((targetMinute-60)*60);
+  let diff=targetSec-currentSec;
+  if(diff<0) diff+=3600;
+
+  let remMin=Math.floor(diff/60).toString().padStart(2,'0');
+  let remSec=(diff%60).toString().padStart(2,'0');
+  document.getElementById("remaining").textContent=
+    "次の切替まで "+remMin+":"+remSec;
+}
+
+function drawHand(pos,length,width,color){
+  ctx.beginPath();
+  ctx.lineWidth=width;
+  ctx.lineCap="round";
+  ctx.strokeStyle=color;
+  ctx.moveTo(0,0);
+  ctx.rotate(pos);
+  ctx.lineTo(0,-length);
+  ctx.stroke();
+  ctx.rotate(-pos);
+}
+
+setInterval(drawClock,1000);
+drawClock();
+</script>
+
+</body>
+</html>
